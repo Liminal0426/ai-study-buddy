@@ -136,6 +136,17 @@ def _resolve_model(
     return prov["default_model"]
 
 
+def _resolve_vision_model(provider_name: str) -> str:
+    """Resolve the first vision-capable model for a provider."""
+    prov = PROVIDERS.get(provider_name)
+    if not prov:
+        return "gpt-4o"  # safe fallback
+    for m_name, caps in prov["models"].items():
+        if caps.get("vision"):
+            return m_name
+    return prov.get("default_model", "gpt-4o")
+
+
 class Config:
     """Application configuration.
 
@@ -167,6 +178,12 @@ class Config:
             "ACTIVE_MODEL", _resolve_model(self.active_provider)
         )
 
+        # Vision provider (separate — many text models don't support images)
+        self.vision_provider: str = os.getenv("VISION_PROVIDER", "zhipuai")
+        self.vision_model: str = os.getenv(
+            "VISION_MODEL", _resolve_vision_model(self.vision_provider)
+        )
+
         # Available providers
         self.available_providers: Dict[str, Dict[str, Any]] = _find_available_providers()
 
@@ -175,16 +192,13 @@ class Config:
         """At least one provider is configured."""
         return bool(self.available_providers)
 
-    def vision_model(self) -> str:
-        """Get a vision-capable model from the active provider."""
-        prov = PROVIDERS.get(self.active_provider)
-        if not prov:
-            return self.active_model
-        # Find first model with vision support
-        for m_name, caps in prov["models"].items():
-            if caps.get("vision"):
-                return m_name
-        return self.active_model
+    def get_vision_model(self) -> str:
+        """Get the user-configured vision model."""
+        return self.vision_model
+
+    def get_vision_provider(self) -> str:
+        """Get the user-configured vision provider name."""
+        return self.vision_provider
 
     def get_provider(self) -> Optional[Dict[str, Any]]:
         """Get the currently active provider config, or first available."""

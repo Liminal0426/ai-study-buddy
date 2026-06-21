@@ -20,31 +20,7 @@ from study_buddy.drawer import render_geometry
 logger = logging.getLogger(__name__)
 
 
-# ── Vision provider fallback ──────────────────────────────────────────
-# DeepSeek marks deepseek-chat as vision=True but the API rejects images.
-# These providers actually support vision based on confirmed API tests.
-
-_VISION_PROVIDERS = {
-    "zhipuai": {"model": "glm-4v-plus", "vision": True},       # confirmed
-    "openai": {"model": "gpt-4o", "vision": True},             # confirmed
-    "anthropic": {"model": "claude-sonnet-4-20250514", "vision": True},  # confirmed
-    "google": {"model": "gemini-2.0-flash", "vision": True},   # confirmed
-    "qwen": {"model": "qwen-vl-plus", "vision": True},     # confirmed
-    "moonshot": {"model": "moonshot-v1-8k", "vision": True},  # presumed
-    "mistral": {"model": "mistral-large-latest", "vision": True},  # presumed
-}
-
-
-def _find_vision_provider() -> Optional[Tuple[str, str]]:
-    """Find an available provider that actually supports vision.
-
-    Returns (provider_name, model_name) or None.
-    """
-    for pname, info in _VISION_PROVIDERS.items():
-        prov = config.available_providers.get(pname)
-        if prov and prov.get("api_key"):
-            return (pname, info["model"])
-    return None
+# ── Public API ────────────────────────────────────────────────────────
 
 
 def _vision_api_request(
@@ -52,19 +28,19 @@ def _vision_api_request(
     max_tokens: int = 4096,
     temperature: float = 0.1,
 ) -> str:
-    """Send a vision request using a vision-capable provider.
+    """Send a vision request using the user-configured vision provider.
 
-    Falls back to the active provider's _api_request if no vision
-    provider is available (will likely fail for image requests).
+    Uses VISION_PROVIDER / VISION_MODEL from .env.
+    Falls back to the active provider if no vision provider is configured.
     """
-    vision = _find_vision_provider()
-    if not vision:
-        # No vision provider — try default (will fail for images)
-        logger.warning("No vision-capable provider found, using default")
+    v_provider = config.vision_provider
+    v_model = config.get_vision_model()
+
+    prov = config.available_providers.get(v_provider)
+    if not prov:
+        logger.warning("Vision provider '%s' not available (missing API key?), using active provider", v_provider)
         return _api_request(messages, max_tokens, temperature)
 
-    pname, model = vision
-    prov = config.available_providers[pname]
     api_key = prov["api_key"]
     base_url = prov["base_url"].rstrip("/")
 
@@ -74,19 +50,19 @@ def _vision_api_request(
     }
 
     payload: Dict[str, Any] = {
-        "model": model,
+        "model": v_model,
         "messages": messages,
         "max_tokens": max_tokens,
         "temperature": temperature,
     }
 
     # ── Anthropic format ──
-    if pname == "anthropic":
-        return _anthropic_request(api_key, base_url, model, messages, max_tokens, temperature)
+    if v_provider == "anthropic":
+        return _anthropic_request(api_key, base_url, v_model, messages, max_tokens, temperature)
 
     # ── Google Gemini format ──
-    if pname == "google":
-        return _gemini_request(api_key, base_url, model, messages, max_tokens, temperature)
+    if v_provider == "google":
+        return _gemini_request(api_key, base_url, v_model, messages, max_tokens, temperature)
 
     # ── OpenAI-compatible ──
     try:
@@ -100,9 +76,9 @@ def _vision_api_request(
         data = resp.json()
         return data["choices"][0]["message"]["content"]
     except requests.RequestException as e:
-        raise RuntimeError(f"[{pname}] Vision API request failed: {e}") from e
+        raise RuntimeError(f"[{v_provider}] Vision API request failed: {e}") from e
     except (KeyError, IndexError) as e:
-        raise RuntimeError(f"[{pname}] Unexpected response format: {e}") from e
+        raise RuntimeError(f"[{v_provider}] Unexpected response format: {e}") from e
 
 
 # ── Public API ────────────────────────────────────────────────────────
