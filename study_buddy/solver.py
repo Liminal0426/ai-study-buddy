@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
-from study_buddy.config import config
+from study_buddy.config import PROVIDERS, config
 from study_buddy.drawer import render_geometry
 
 logger = logging.getLogger(__name__)
@@ -36,10 +36,12 @@ def _vision_api_request(
     v_provider = config.vision_provider
     v_model = config.get_vision_model()
 
+    if not v_provider or not v_model:
+        return "❌ 未配置视觉模型。请在 .env 中设置 VISION_PROVIDER 和 VISION_MODEL"
+
     prov = config.available_providers.get(v_provider)
     if not prov:
-        logger.warning("Vision provider '%s' not available (missing API key?), using active provider", v_provider)
-        return _api_request(messages, max_tokens, temperature)
+        return f"❌ 视觉模型 {v_provider} 未配置 API key。请检查 .env 中的 {PROVIDERS.get(v_provider, {}).get('api_key_var', 'API_KEY')}"
 
     api_key = prov["api_key"]
     base_url = prov["base_url"].rstrip("/")

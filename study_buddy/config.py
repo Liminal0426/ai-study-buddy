@@ -29,7 +29,7 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
         "base_url": "https://api.deepseek.com/v1",
         "api_key_var": "DEEPSEEK_API_KEY",
         "models": {
-            "deepseek-chat": {"vision": True, "text": True},
+            "deepseek-chat": {"vision": False, "text": True},
             "deepseek-reasoner": {"vision": False, "text": True},
         },
         "default_model": "deepseek-chat",
@@ -127,24 +127,17 @@ def _resolve_model(
     provider_name: str,
     model_name: Optional[str] = None,
 ) -> str:
-    """Resolve a model name, defaulting to the provider's default."""
-    prov = PROVIDERS.get(provider_name)
-    if not prov:
-        return ""
-    if model_name and model_name in prov["models"]:
-        return model_name
-    return prov["default_model"]
+    """Resolve a model name.
 
-
-def _resolve_vision_model(provider_name: str) -> str:
-    """Resolve the first vision-capable model for a provider."""
+    Passes through any model name the user sets — no hardcoded whitelist.
+    Only falls back to default when model_name is empty.
+    """
     prov = PROVIDERS.get(provider_name)
-    if not prov:
-        return "gpt-4o"  # safe fallback
-    for m_name, caps in prov["models"].items():
-        if caps.get("vision"):
-            return m_name
-    return prov.get("default_model", "gpt-4o")
+    if model_name:
+        return model_name  # user's choice, always respected
+    if prov:
+        return prov.get("default_model", "")
+    return ""
 
 
 class Config:
@@ -172,17 +165,15 @@ class Config:
             "DATABASE_PATH", str(Path.cwd() / "study_buddy.db")
         )
 
-        # Active provider (user preference from env)
+        # Text model
         self.active_provider: str = os.getenv("ACTIVE_PROVIDER", "deepseek")
         self.active_model: str = os.getenv(
             "ACTIVE_MODEL", _resolve_model(self.active_provider)
         )
 
-        # Vision provider (separate — many text models don't support images)
-        self.vision_provider: str = os.getenv("VISION_PROVIDER", "zhipuai")
-        self.vision_model: str = os.getenv(
-            "VISION_MODEL", _resolve_vision_model(self.vision_provider)
-        )
+        # Vision model (separate — user picks what works)
+        self.vision_provider: str = os.getenv("VISION_PROVIDER", "")
+        self.vision_model: str = os.getenv("VISION_MODEL", "")
 
         # Available providers
         self.available_providers: Dict[str, Dict[str, Any]] = _find_available_providers()
